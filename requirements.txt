@@ -1,5 +1,5 @@
-python-telegram-bot==4.12.1
-pyTelegramBotAPI==4.14.0
-etherscan-python==2.3.0
-python-dotenv==1.0.0
-requests==2.31.0 
+python-telegram-bot
+pyTelegramBotAPI
+etherscan-python
+python-dotenv
+requests
