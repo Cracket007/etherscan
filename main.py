@@ -24,6 +24,7 @@ from handlers.command_handlers import register_command_handlers, get_wallet_bala
 from database import Database
 import signal
 import sys
+import csv
 
 load_dotenv()
 API_KEY = os.getenv('ETHERSCAN_API_KEY')
@@ -45,66 +46,65 @@ def get_eth_usd_price():
         return None
 
 def save_to_csv(transactions, filename):
-    import pandas as pd
-    df = pd.DataFrame(transactions)
-    file_path = f"reports/{filename}"
+    """Сохраняет транзакции в CSV файл"""
     os.makedirs("reports", exist_ok=True)
-    df.to_csv(file_path, index=False)
+    file_path = f"reports/{filename}"
+
+    with open(file_path, mode='w', newline='', encoding='utf-8') as file:
+        writer = csv.DictWriter(file, fieldnames=[
+            'Date', 'From', 'To', 'Transaction Hash', 'Amount In (ETH)',
+            'Amount Out (ETH)', 'Fee (ETH)', 'Fee (USD)', 'CurrentValue', 
+            'General amount', 'General amount USD'
+        ])
+        writer.writeheader()
+        writer.writerows(transactions)
     return file_path
 
 def process_transactions(transactions, wallet_address, eth_usd_price):
-    try:
-        eth_usd_price = float(eth_usd_price) if eth_usd_price is not None else 0
-        processed = []
-        for tx in transactions:
-            try:
-                tx_hash = tx.get('hash', '')
-                from_address = tx.get('from', '')
-                to_address = tx.get('to', '')
-                
-                timestamp = int(str(tx.get('timeStamp', '0')).strip())
-                date = datetime.fromtimestamp(timestamp, timezone.utc).strftime('%d/%m/%Y')
-
-                value_wei = int(str(tx.get('value', '0')).strip())
-                value_eth = float(value_wei) / (10 ** 18)
-
-                gas_price_wei = int(str(tx.get('gasPrice', '0')).strip())
-                gas_used = int(str(tx.get('gasUsed', '0')).strip())
-                fee_wei = gas_price_wei * gas_used
-                fee_eth = float(fee_wei) / (10 ** 18)
-
-                fee_usd = fee_eth * eth_usd_price
-                is_outgoing = from_address.lower() == wallet_address.lower()
-                amount_out_eth = value_eth if is_outgoing else 0
-                current_value = value_eth * eth_usd_price
-                
-                general_amount = value_eth if not is_outgoing else amount_out_eth
-                if is_outgoing:
-                    general_amount -= fee_eth
-                
-                general_amount_usd = general_amount * eth_usd_price
-
-                processed.append({
-                    'Transaction Hash': tx_hash,
-                    'Date': date,
-                    'From': from_address,
-                    'To': to_address,
-                    'Amount In (ETH)': value_eth if not is_outgoing else 0,
-                    'Amount Out (ETH)': amount_out_eth,
-                    'Fee (ETH)': fee_eth,
-                    'Fee (USD)': fee_usd,
-                    'CurrentValue': current_value,
-                    'General amount': general_amount,
-                    'General amount USD': general_amount_usd
-                })
-                
-            except Exception:
-                continue
-                
-        return processed
+    processed = []
+    for tx in transactions:
+        tx_hash = tx['hash']
+        timestamp = int(tx['timeStamp'])
+        date = datetime.fromtimestamp(timestamp, timezone.utc).strftime('%d/%m/%Y')
         
-    except Exception:
-        return []
+        from_address = tx['from']
+        to_address = tx['to']
+        
+        value_wei = int(tx['value'])
+        value_eth = value_wei / 10**18
+        
+        gas_price_wei = int(tx['gasPrice'])
+        gas_used = int(tx['gasUsed'])
+        fee_wei = gas_price_wei * gas_used
+        fee_eth = fee_wei / 10**18
+        fee_usd = fee_eth * eth_usd_price if eth_usd_price else 0
+        
+        is_outgoing = from_address.lower() == wallet_address.lower()
+        amount_out_eth = value_eth if is_outgoing else 0
+        
+        current_value = value_eth * eth_usd_price if eth_usd_price else 0
+        
+        general_amount = value_eth if not is_outgoing else amount_out_eth
+        if is_outgoing:
+            general_amount -= fee_eth
+        
+        general_amount_usd = general_amount * eth_usd_price
+
+        processed.append({
+            'Transaction Hash': tx_hash,
+            'Date': date,
+            'From': from_address,
+            'To': to_address,
+            'Amount In (ETH)': value_eth if not is_outgoing else 0,
+            'Amount Out (ETH)': amount_out_eth,
+            'Fee (ETH)': fee_eth,
+            'Fee (USD)': fee_usd,
+            'CurrentValue': current_value,
+            'General amount': general_amount,
+            'General amount USD': general_amount_usd
+        })
+        
+    return processed
 
 def process_eth_request(chat_id, wallet_address, start_timestamp, end_timestamp, period_str, message_id=None):
     try:
