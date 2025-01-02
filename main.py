@@ -60,6 +60,7 @@ def save_to_csv(transactions, filename):
         writer.writerows(transactions)
     return file_path
 
+
 def process_transactions(transactions, wallet_address, eth_usd_price):
     processed = []
     for tx in transactions:
@@ -90,6 +91,7 @@ def process_transactions(transactions, wallet_address, eth_usd_price):
         
         general_amount_usd = general_amount * eth_usd_price
 
+        # Оригинальная строка транзакции
         processed.append({
             'Transaction Hash': tx_hash,
             'Date': date,
@@ -103,8 +105,26 @@ def process_transactions(transactions, wallet_address, eth_usd_price):
             'General amount': general_amount,
             'General amount USD': general_amount_usd
         })
+
+        # Дополнительная строка для комиссии
+        if amount_out_eth > 0 and fee_eth > 0:  # Только для исходящих транзакций
+            processed.append({
+                'Transaction Hash': tx_hash,  # Дублируем хэш для связности
+                'Date': date,
+                'From': from_address,
+                'To': to_address,
+                'Amount In (ETH)': 0,  # Входящая сумма отсутствует
+                'Amount Out (ETH)': fee_eth,  # Указываем комиссию как расход
+                'Fee (ETH)': 0,  # Поле Fee (ETH) числовое
+                'Fee (USD)': 0,  # Поле Fee (USD) числовое
+                'CurrentValue': 0,
+                'General amount': 0,
+                'General amount USD': 0
+            })
         
     return processed
+
+
 
 def process_eth_request(chat_id, wallet_address, start_timestamp, end_timestamp, period_str, message_id=None):
     try:
