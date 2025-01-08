@@ -109,17 +109,17 @@ def process_transactions(transactions, wallet_address, eth_usd_price):
         # Дополнительная строка для комиссии
         if amount_out_eth > 0 and fee_eth > 0:  # Только для исходящих транзакций
             processed.append({
-                'Transaction Hash': tx_hash,  # Дублируем хэш для связности
+                'Transaction Hash': tx_hash,
                 'Date': date,
                 'From': from_address,
                 'To': to_address,
-                'Amount In (ETH)': 0,  # Входящая сумма отсутствует
-                'Amount Out (ETH)': fee_eth,  # Указываем комиссию как расход
-                'Fee (ETH)': 0,  # Поле Fee (ETH) числовое
-                'Fee (USD)': 0,  # Поле Fee (USD) числовое
-                'CurrentValue': 0,
-                'General amount': 0,
-                'General amount USD': 0
+                'Amount In (ETH)': 0,
+                'Amount Out (ETH)': fee_eth,  # Комиссия как расход
+                'Fee (ETH)': fee_eth,  # Добавляем значение комиссии
+                'Fee (USD)': fee_usd,  # Добавляем значение комиссии в USD
+                'CurrentValue': 0,  # Для строки комиссии CurrentValue всегда 0
+                'General amount': -fee_eth,  # Отрицательное значение комиссии
+                'General amount USD': -fee_usd  # Отрицательное значение комиссии в USD
             })
         
     return processed
