@@ -86,9 +86,11 @@ def process_transactions(transactions, wallet_address, eth_usd_price):
         current_value = value_eth * eth_usd_price if eth_usd_price else 0
         
         general_amount = value_eth if not is_outgoing else amount_out_eth
-        if is_outgoing:
+        if is_outgoing and amount_out_eth > 0:  # Меняем знак только для исходящих транзакций с amount_out
+            general_amount = -amount_out_eth
+        elif is_outgoing:
             general_amount -= fee_eth
-        
+            
         general_amount_usd = general_amount * eth_usd_price
 
         # Оригинальная строка транзакции
