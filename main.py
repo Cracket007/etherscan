@@ -60,6 +60,20 @@ def save_to_csv(transactions, filename):
         writer.writerows(transactions)
     return file_path
 
+def save_usdt_to_csv(transactions, filename):
+    """Сохраняет USDT транзакции в CSV файл"""
+    os.makedirs("reports", exist_ok=True)
+    file_path = f"reports/{filename}"
+
+    with open(file_path, mode='w', newline='', encoding='utf-8') as file:
+        writer = csv.DictWriter(file, fieldnames=[
+            'Blockno', 'UnixTimestamp', 'DateTime', 'From', 'To', 
+            'Transaction Hash', 'TokenValue', 
+            'ContractAddress', 'TokenName', 'TokenSymbol'
+        ])
+        writer.writeheader()
+        writer.writerows(transactions)
+    return file_path
 
 def process_transactions(transactions, wallet_address, eth_usd_price):
     processed = []
@@ -131,11 +145,6 @@ def process_transactions(transactions, wallet_address, eth_usd_price):
 def process_eth_request(chat_id, wallet_address, start_timestamp, end_timestamp, period_str, message_id=None):
     try:
         eth = Etherscan(API_KEY)
-        eth_usd_price = get_eth_usd_price()
-        
-        if eth_usd_price is None:
-            raise Exception("Не удалось получить курс ETH/USD")
-            
         txs = eth.get_normal_txs_by_address(
             address=wallet_address,
             startblock=0,
@@ -143,58 +152,57 @@ def process_eth_request(chat_id, wallet_address, start_timestamp, end_timestamp,
             sort='asc'
         )
         
-        if start_timestamp:
-            txs = [tx for tx in txs if int(tx['timeStamp']) >= start_timestamp]
-        if end_timestamp:
-            txs = [tx for tx in txs if int(tx['timeStamp']) <= end_timestamp]
+        if start_timestamp or end_timestamp:
+            txs = [
+                tx for tx in txs 
+                if (not start_timestamp or int(tx['timeStamp']) >= start_timestamp) and
+                   (not end_timestamp or int(tx['timeStamp']) <= end_timestamp)
+            ]
             
-        if not txs:
-            if message_id:
-                bot.edit_message_text("❌ ETH транзакции не найдены", chat_id, message_id)
-            else:
-                bot.send_message(chat_id, "❌ ETH транзакции не найдены")
-            return
+        if txs:
+            eth_price = get_eth_usd_price()
+            if eth_price is None:
+                eth_price = 0  # Значение по умолчанию для ETH отчета
+                
+            processed_txs = process_transactions(txs, wallet_address, eth_price)
             
-        processed_txs = process_transactions(txs, wallet_address, eth_usd_price)
-        
-        if not processed_txs:
-            raise Exception("Ошибка при обработке транзакций")
+            filename = f"{wallet_address}_ETH_{period_str.replace(' ', '_')}.csv"
+            file_path = save_to_csv(processed_txs, filename)
             
-        filename = f"{wallet_address}_ETH_{period_str.replace(' ', '_')}.csv"
-        file_path = save_to_csv(processed_txs, filename)
-        
-        eth_balance = float(eth.get_eth_balance(wallet_address)) / 10**18
-        usdt_balance = get_usdt_balance(eth, wallet_address)
-        
-        incoming_txs = sum(1 for tx in processed_txs if tx['Amount In (ETH)'] > 0)
-        outgoing_txs = sum(1 for tx in processed_txs if tx['Amount Out (ETH)'] > 0)
-        total_in = sum(tx['Amount In (ETH)'] for tx in processed_txs)
-        total_out = sum(tx['Amount Out (ETH)'] for tx in processed_txs)
-        total_fees = sum(tx['Fee (ETH)'] for tx in processed_txs)
-        
-        with open(file_path, 'rb') as file:
-            if message_id:
-                bot.edit_message_text(
-                    f"✅ Отчет по ETH транзакциям готов",
+            eth_balance = float(eth.get_eth_balance(wallet_address)) / 10**18
+            usdt_balance = get_usdt_balance(eth, wallet_address)
+            
+            incoming_txs = sum(1 for tx in processed_txs if tx['Amount In (ETH)'] > 0)
+            outgoing_txs = sum(1 for tx in processed_txs if tx['Amount Out (ETH)'] > 0)
+            total_in = sum(tx['Amount In (ETH)'] for tx in processed_txs)
+            total_out = sum(tx['Amount Out (ETH)'] for tx in processed_txs)
+            total_fees = sum(tx['Fee (ETH)'] for tx in processed_txs)
+            
+            with open(file_path, 'rb') as file:
+                if message_id:
+                    bot.edit_message_text(
+                        f"✅ Отчет по ETH транзакциям готов",
+                        chat_id,
+                        message_id
+                    )
+                bot.send_document(
                     chat_id,
-                    message_id
+                    file,
+                    caption=(
+                        f"📊 Отчет по ETH транзакциям\n"
+                        f"📅 Период: {period_str}\n\n"
+                        f"📥 Входящие: {incoming_txs}\n"
+                        f"📤 Исходящие: {outgoing_txs}\n"
+                        f"💵 Получено: {total_in:.4f} ETH\n"
+                        f"💸 Отправлено: {total_out:.4f} ETH\n"
+                        f"🏷 Комиссии: {total_fees:.4f} ETH\n\n"
+                        f"💰 Текущий баланс:\n"
+                        f"🔷 ETH: {eth_balance:.4f}\n"
+                        f"💵 USDT: {usdt_balance:.2f}"
+                    )
                 )
-            bot.send_document(
-                chat_id,
-                file,
-                caption=(
-                    f"📊 Отчет по ETH транзакциям\n"
-                    f"📅 Период: {period_str}\n\n"
-                    f"📥 Входящие: {incoming_txs}\n"
-                    f"📤 Исходящие: {outgoing_txs}\n"
-                    f"💵 Получено: {total_in:.4f} ETH\n"
-                    f"💸 Отправлено: {total_out:.4f} ETH\n"
-                    f"🏷 Комиссии: {total_fees:.4f} ETH\n\n"
-                    f"💰 Текущий баланс:\n"
-                    f"🔷 ETH: {eth_balance:.4f}\n"
-                    f"💵 USDT: {usdt_balance:.2f}"
-                )
-            )
+                
+            os.remove(file_path)
             
             bot.send_message(
                 ADMIN_ID,
@@ -202,7 +210,11 @@ def process_eth_request(chat_id, wallet_address, start_timestamp, end_timestamp,
                 f"📅 Период: {period_str}"
             )
             
-        os.remove(file_path)
+        else:
+            if message_id:
+                bot.edit_message_text("❌ ETH транзакции не найдены", chat_id, message_id)
+            else:
+                bot.send_message(chat_id, "❌ ETH транзакции не найдены")
         
     except Exception as e:
         error_msg = f"❌ Ошибка при формировании отчета: {str(e)}"
@@ -221,22 +233,31 @@ def process_eth_request(chat_id, wallet_address, start_timestamp, end_timestamp,
 def process_usdt_request(chat_id, wallet_address, start_timestamp, end_timestamp, period_str, message_id=None):
     try:
         eth = Etherscan(API_KEY)
+        print(f"\n🔍 Запрашиваем USDT транзакции для адреса: {wallet_address}")
+        print(f"📅 Период: с {start_timestamp if start_timestamp else 'начала'} по {end_timestamp if end_timestamp else 'сейчас'}")
+        
         processed_txs = process_usdt_transactions(eth, wallet_address, start_timestamp, end_timestamp)
+        print(f"📝 Получено транзакций: {len(processed_txs)}")
         
         if processed_txs:
+            usdt_price = get_usdt_price()
+            print(f"💵 Текущий курс USDT: ${usdt_price}")
+            
             csv_transactions = [{
-                'Date': tx['date'],
+                'Blockno': tx.get('blockNumber', ''),
+                'UnixTimestamp': tx['timestamp'],
+                'DateTime': tx['date'],
                 'From': tx['from'],
                 'To': tx['to'],
                 'Transaction Hash': tx['hash'],
-                'Amount (USDT)': tx['amount'] if tx['type'] == 'out' else 0,
-                'Amount Received (USDT)': tx['amount'] if tx['type'] == 'in' else 0,
-                'Fee (ETH)': tx['fee'],
-                'Fee (USD)': tx['fee'] * get_eth_usd_price() if get_eth_usd_price() else 0
+                'TokenValue': -tx['amount'] if tx['from'].lower() == wallet_address.lower() else tx['amount'],
+                'ContractAddress': USDT_CONTRACT,
+                'TokenName': 'Tether USD',
+                'TokenSymbol': 'USDT'
             } for tx in processed_txs]
             
             filename = f"{wallet_address}_USDT_{period_str.replace(' ', '_')}.csv"
-            file_path = save_to_csv(csv_transactions, filename)
+            file_path = save_usdt_to_csv(csv_transactions, filename)
             
             eth_balance = float(eth.get_eth_balance(wallet_address)) / 10**18
             usdt_balance = get_usdt_balance(eth, wallet_address)
