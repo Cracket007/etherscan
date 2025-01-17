@@ -16,11 +16,6 @@ def get_wallet_balances(eth_client, wallet_address):
 def get_wallet_balances_at_date(eth_client, wallet_address, target_date):
     """Получает балансы ETH и USDT на указанную дату"""
     try:
-        # 1. Получаем текущий баланс ETH
-        current_eth_balance = float(eth_client.get_eth_balance(wallet_address)) / 10**18
-        current_usdt_balance = get_usdt_balance(eth_client, wallet_address)
-        
-        # 2. Получаем все транзакции ETH и USDT
         eth_txs = eth_client.get_normal_txs_by_address(
             address=wallet_address,
             startblock=0,
@@ -31,40 +26,34 @@ def get_wallet_balances_at_date(eth_client, wallet_address, target_date):
         usdt_txs = process_usdt_transactions(eth_client, wallet_address)
         
         if not eth_txs and not usdt_txs:
-            return current_eth_balance, current_usdt_balance
+            return float(eth_client.get_eth_balance(wallet_address)) / 10**18, get_usdt_balance(eth_client, wallet_address)
         
-        # 3. Фильтруем транзакции после указанной даты
         target_timestamp = int(target_date.timestamp())
-        future_eth_txs = [tx for tx in eth_txs if int(tx['timeStamp']) > target_timestamp]
-        future_usdt_txs = [tx for tx in usdt_txs if tx['timestamp'] > target_timestamp]
+        past_eth_txs = [tx for tx in eth_txs if int(tx['timeStamp']) <= target_timestamp]
+        past_usdt_txs = [tx for tx in usdt_txs if tx['timestamp'] <= target_timestamp]
         
-        # 4. Вычисляем баланс ETH на указанную дату
-        eth_balance = current_eth_balance
-        for tx in future_eth_txs:
+        eth_balance = 0
+        for tx in past_eth_txs:
             try:
                 if tx['from'].lower() == wallet_address.lower():
                     value = float(tx['value']) / 10**18
                     gas_price = float(tx['gasPrice'])
                     gas_used = float(tx['gasUsed'])
                     fee = (gas_price * gas_used) / 10**18
-                    
-                    eth_balance += value  # Возвращаем отправленные ETH
-                    eth_balance += fee    # Возвращаем комиссию
-                    
+                    eth_balance -= (value + fee)
                 if tx['to'].lower() == wallet_address.lower():
                     value = float(tx['value']) / 10**18
-                    eth_balance -= value  # Убираем полученные ETH
+                    eth_balance += value
             except Exception:
                 continue
                 
-        # 5. Вычисляем баланс USDT на указанную дату
-        usdt_balance = current_usdt_balance
-        for tx in future_usdt_txs:
+        usdt_balance = 0
+        for tx in past_usdt_txs:
             try:
-                if tx['type'] == 'out':
-                    usdt_balance += tx['amount']  # Возвращаем отправленные USDT
-                else:
-                    usdt_balance -= tx['amount']  # Убираем полученные USDT
+                if tx['from'].lower() == wallet_address.lower():
+                    usdt_balance -= tx['amount']
+                if tx['to'].lower() == wallet_address.lower():
+                    usdt_balance += tx['amount']
             except Exception:
                 continue
         
